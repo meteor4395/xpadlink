@@ -9,3 +9,6 @@
 /release-assets/
 # A global "lib/" rule would otherwise hide the Flutter source
 !/app/lib/
+release.keystore
+*.jks
+*.keystore
