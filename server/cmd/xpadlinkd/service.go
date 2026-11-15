@@ -56,8 +56,11 @@ func installService(args []string) error {
 	if err != nil {
 		return err
 	}
-	if runtime.GOOS != "linux" {
-		fmt.Fprintln(os.Stderr, "note: virtual pads need Linux (uinput); on this OS the service can only run with -dry")
+	switch runtime.GOOS {
+	case "darwin":
+		fmt.Fprintln(os.Stderr, "note: virtual gamepads are not supported on macOS; the service can only run with -dry")
+	case "windows":
+		fmt.Fprintln(os.Stderr, "note: Windows virtual Xbox controllers require ViGEmBus and ViGEmClient.dll")
 	}
 
 	switch runtime.GOOS {

@@ -1,5 +1,11 @@
 /server/xpadlinkd
+/server/xpadlinkd.exe
+/server/xpadlinkd-windows-amd64.exe
+/server/ViGEmClient.dll
+/server/ViGEmClient-LICENSE.txt
+/server/ViGEmBus_*.exe
 /app/xpadlink_app/
 /dist/
+/release-assets/
 # A global "lib/" rule would otherwise hide the Flutter source
 !/app/lib/

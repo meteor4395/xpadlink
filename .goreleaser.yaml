@@ -10,8 +10,17 @@ builds:
       - CGO_ENABLED=0
     goos: [linux, darwin, windows]
     goarch: [amd64, arm64]
+    ignore:
+      - goos: windows
+        goarch: arm64
     flags: [-trimpath]
     ldflags: [-s -w]
+
+release:
+  extra_files:
+    - glob: release-assets/xpadlinkd-windows-amd64.exe
+    - glob: release-assets/ViGEmClient.dll
+    - glob: release-assets/ViGEmClient-LICENSE.txt
 
 archives:
   - id: xpadlinkd
@@ -23,6 +32,8 @@ archives:
     files:
       - README.md
       - src: 99-xpadlink-uinput.rules
+        strip_parent: true
+      - src: release-assets/ViGEmClient-LICENSE.txt
         strip_parent: true
 
 checksum:

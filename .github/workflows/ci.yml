@@ -32,9 +32,59 @@ jobs:
       - run: go vet ./...
       - run: go test ./...
 
+  windows-release-assets:
+    name: Windows release assets
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.24"
+          cache: false
+      - name: Build Windows amd64 daemon
+        working-directory: server
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          New-Item -ItemType Directory -Force ..\release-assets | Out-Null
+          $env:GOOS = "windows"
+          $env:GOARCH = "amd64"
+          go build -trimpath -ldflags="-s -w" -o ..\release-assets\xpadlinkd-windows-amd64.exe .\cmd\xpadlinkd
+      - name: Build ViGEmClient DLL
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = "Stop"
+          $source = Join-Path $env:RUNNER_TEMP "ViGEmClient"
+          $assets = Join-Path $env:GITHUB_WORKSPACE "release-assets"
+          git clone https://github.com/nefarius/ViGEmClient.git $source
+          if ($LASTEXITCODE -ne 0) { throw "Could not clone ViGEmClient" }
+          git -C $source checkout b66d02d57e32cc8595369c53418b843e958649b4
+          if ($LASTEXITCODE -ne 0) { throw "Could not check out the pinned ViGEmClient revision" }
+          cmake -S $source -B "$source\build" -G "Visual Studio 17 2022" -A x64 `
+            -DViGEmClient_DLL=ON `
+            "-DCMAKE_CXX_FLAGS=/DVIGEM_DYNAMIC /DVIGEM_EXPORTS"
+          if ($LASTEXITCODE -ne 0) { throw "CMake configure failed" }
+          cmake --build "$source\build" --config Release --target ViGEmClientShared --clean-first
+          if ($LASTEXITCODE -ne 0) { throw "ViGEmClient build failed" }
+          $vswhere = Join-Path ${env:ProgramFiles(x86)} "Microsoft Visual Studio\Installer\vswhere.exe"
+          $dumpbin = & $vswhere -latest -products "*" -find "VC\Tools\MSVC\**\bin\Hostx64\x64\dumpbin.exe" | Select-Object -First 1
+          if (-not $dumpbin) { throw "Could not locate Visual Studio dumpbin.exe" }
+          $dll = Join-Path $source "build\Release\ViGEmClient.dll"
+          $exports = & $dumpbin /nologo /exports $dll
+          if ($LASTEXITCODE -ne 0 -or ($exports -join "`n") -notmatch "\bvigem_alloc\b") {
+            throw "ViGEmClient.dll does not export vigem_alloc"
+          }
+          Copy-Item $dll $assets
+          Copy-Item (Join-Path $source "LICENSE") (Join-Path $assets "ViGEmClient-LICENSE.txt")
+      - uses: actions/upload-artifact@v4
+        with:
+          name: windows-release-assets
+          path: release-assets/*
+          if-no-files-found: error
+
   goreleaser:
     name: goreleaser
-    needs: test
+    needs: [test, windows-release-assets]
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -46,6 +96,10 @@ jobs:
         with:
           go-version: "1.24"
           cache: false
+      - uses: actions/download-artifact@v4
+        with:
+          name: windows-release-assets
+          path: release-assets
       # Tags publish a release; everything else builds a snapshot to validate the config.
       - uses: goreleaser/goreleaser-action@v6
         with:
@@ -62,4 +116,5 @@ jobs:
             dist/*.tar.gz
             dist/*.zip
             dist/SHA256SUMS
+            release-assets/*
           if-no-files-found: error

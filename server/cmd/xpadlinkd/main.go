@@ -1,5 +1,5 @@
 // xpadlinkd receives controller state over UDP or Bluetooth and exposes each
-// client as a virtual gamepad through /dev/uinput.
+// client as a virtual gamepad through the host's virtual gamepad backend.
 package main
 
 import (
@@ -38,7 +38,7 @@ func main() {
 	timeout := flag.Duration("timeout", 3*time.Second, "drop a client after this much silence")
 	dsuAddr := flag.String("dsu", "127.0.0.1:26760", "Cemuhook DSU address serving phone motion to Cemu (empty to disable)")
 	useBT := flag.Bool("bt", true, "accept phones over Bluetooth (Linux, needs bluetoothd)")
-	dry := flag.Bool("dry", false, "log input instead of creating uinput devices")
+	dry := flag.Bool("dry", false, "log input instead of creating virtual gamepad devices")
 	level := flag.String("log-level", "", "debug, info, warn or error (default info, debug with -dry)")
 	flag.Parse()
 

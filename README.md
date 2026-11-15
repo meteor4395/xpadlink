@@ -6,10 +6,12 @@
 [![Release](https://img.shields.io/github/v/release/josuebrunel/xpadlink)](https://github.com/josuebrunel/xpadlink/releases)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
-Use an Android phone, or a gamepad plugged into it, as a gamepad on your Linux PC.
+Use an Android phone, or a gamepad plugged into it, as a gamepad on your Linux or Windows PC.
 
 ```
-phone (Flutter app) --UDP, 60 Hz--> xpadlinkd (Go) --/dev/uinput--> virtual Xbox 360 pad
+phone (Flutter app) --UDP, 60 Hz--> xpadlinkd (Go) --> virtual Xbox 360 pad
+                                                   Linux: /dev/uinput
+                                                   Windows: ViGEmBus
 ```
 
 ## Contents
@@ -17,7 +19,9 @@ phone (Flutter app) --UDP, 60 Hz--> xpadlinkd (Go) --/dev/uinput--> virtual Xbox
 - [Features](#features)
 - [Screenshots](#screenshots)
 - [Quick start](#quick-start)
-  - [1. Server (Linux PC)](#1-server-linux-pc)
+  - [1. Server](#1-server)
+    - [Windows setup](#windows-setup)
+    - [Build on Windows](#build-on-windows)
   - [2. App (Android)](#2-app-android)
   - [3. Play](#3-play)
 - [Bluetooth](#bluetooth)
@@ -78,28 +82,95 @@ phone (Flutter app) --UDP, 60 Hz--> xpadlinkd (Go) --/dev/uinput--> virtual Xbox
 
 You need three things: the server on your PC, the app on your phone, and both on the same Wi-Fi.
 
-### 1. Server (Linux PC)
+### 1. Server
 
-Download `xpadlinkd-linux-amd64.tar.gz` (or `arm64`) from the
-[Releases](https://github.com/josuebrunel/xpadlink/releases) page and unpack it. Or build it (Go 1.22+):
+Download the archive for your PC from the
+[Releases](https://github.com/josuebrunel/xpadlink/releases) page. Or build it (Go 1.22+):
+
+**Linux:** choose `xpadlinkd-linux-amd64.tar.gz` (or `arm64`) and unpack it. Set up uinput once so the daemon can create virtual pads without root:
 
 ```sh
 git clone https://github.com/josuebrunel/xpadlink && cd xpadlink
 make build            # produces server/xpadlinkd
-```
-
-One-time setup so you can create virtual pads without root, then log out and back in:
-
-```sh
 make uinput-setup     # loads uinput, installs the udev rule, adds you to the input group
 make firewall         # only if you use ufw: opens UDP 9777
 ```
 
-Start it. It prints the token and the addresses to use:
+Start the daemon. It prints the token and the addresses to use:
 
 ```sh
 server/xpadlinkd
 ```
+
+**Windows:** use the `xpadlinkd-windows-amd64.zip` release. Install
+[ViGEmBus](https://github.com/nefarius/ViGEmBus/releases). The XPadLink GitHub release also
+provides `xpadlinkd-windows-amd64.exe` and `ViGEmClient.dll` as separate downloads; place
+both in the same folder. The DLL is built from the official ViGEmClient source by CI. The
+ViGEmBus installer is not redistributed; download it from the official link above.
+
+Follow [Windows setup](#windows-setup) to install and start it. The daemon prints a token
+and LAN address to enter in the Android app. Allow the executable through Windows Defender
+Firewall on private networks (UDP port 9777). Windows currently supports Wi-Fi; Bluetooth
+connections are Linux-only.
+
+#### Windows setup
+
+**Requirements:** a 64-bit Windows PC, the ViGEmBus driver, and both XPadLink files in one
+folder. Use the `windows-amd64` XPadLink executable and x64 `ViGEmClient.dll`. The
+ViGEmClient project is retired and its GitHub releases do not provide a prebuilt DLL.
+
+1. Download and install **ViGEmBus** from the [official releases](https://github.com/nefarius/ViGEmBus/releases). Restart Windows if its installer asks.
+2. Download `xpadlinkd-windows-amd64.exe` and `ViGEmClient.dll` from the same XPadLink release. Put them together in a folder such as `C:\XPadLink`. The ViGEmClient license is included in the release as `ViGEmClient-LICENSE.txt`.
+3. Open PowerShell in that folder and start the server:
+
+   ```powershell
+   .\xpadlinkd-windows-amd64.exe -bt=false
+   ```
+
+4. If Windows Firewall prompts, allow `xpadlinkd-windows-amd64.exe` on **Private networks**. Otherwise, add an inbound firewall rule for UDP port `9777`.
+5. Copy the token and IP address printed in the PowerShell window. Keep the server running.
+6. On the Android phone, join the same Wi-Fi, open XPadLink, select the PC on the **Wi-Fi** tab (or enter its printed `IP:9777` address), enter the token, and connect.
+7. Test input on Windows with **Win+R**, `joy.cpl`, select the Xbox 360 controller, then **Properties**. Press app buttons and move the sticks; they should register.
+
+The virtual pad appears when the phone connects and disappears when it disconnects. Keep both XPadLink files together whenever starting the server.
+
+#### Build on Windows
+
+To build locally instead of downloading the release, install Go 1.22+, Git, CMake 3.20+, and Visual Studio 2022 or Build Tools 2022 with the **Desktop development with C++** workload. Install ViGEmBus separately as above.
+
+Build the XPadLink server executable from the repository. This writes the ignored
+`server\xpadlinkd-windows-amd64.exe`:
+
+```powershell
+cd C:\path\to\xpadlink\server
+$env:GOOS = "windows"
+$env:GOARCH = "amd64"
+go build -trimpath -ldflags="-s -w" -o .\xpadlinkd-windows-amd64.exe .\cmd\xpadlinkd
+```
+
+Build the matching client DLL from the pinned official ViGEmClient source. The export flags are required so the DLL provides `vigem_alloc`:
+
+```powershell
+cd $env:TEMP
+git clone https://github.com/nefarius/ViGEmClient.git
+cd .\ViGEmClient
+git checkout b66d02d57e32cc8595369c53418b843e958649b4
+cmake -S . -B build -G "Visual Studio 17 2022" -A x64 `
+  -DViGEmClient_DLL=ON `
+  -DCMAKE_CXX_FLAGS="/DVIGEM_DYNAMIC /DVIGEM_EXPORTS"
+cmake --build build --config Release --target ViGEmClientShared --clean-first
+dumpbin /exports .\build\Release\ViGEmClient.dll | findstr vigem_alloc
+```
+
+The last command should list `vigem_alloc`. Copy the DLL beside the XPadLink executable:
+
+```powershell
+Copy-Item .\build\Release\ViGEmClient.dll C:\path\to\xpadlink\server\
+```
+
+If the Visual Studio generator is unavailable, install the C++ workload. With an x64 Native Tools Command Prompt and NMake, use `-G "NMake Makefiles"` and omit `-A x64`.
+
+The locally built executable, DLL, and optional ViGEmBus installer are ignored by Git. The XPadLink executable and DLL are attached individually to tagged XPadLink releases by CI; the ViGEmBus installer remains an upstream download.
 
 ### 2. App (Android)
 
@@ -185,7 +256,8 @@ The token is saved once and reused, so the phone never needs a new one.
 - Show the token any time: `xpadlinkd token`.
 - Linux: to start at boot instead of at login, run `loginctl enable-linger $USER`.
 - Keep the binary where it is: the service points at its current path. Run `install` again after moving it.
-- macOS and Windows can run the daemon, but only Linux can create the virtual pad (uinput). Use `-dry` there.
+- macOS can run the daemon with `-dry` but cannot create virtual pads.
+- Windows virtual pads require the amd64 build, ViGEmBus, and an x64 `ViGEmClient.dll`. The two XPadLink files are separate release downloads; obtain the driver installer from ViGEmBus upstream. Use `-dry` to run without the virtual pad dependencies.
 
 ## Troubleshooting
 
@@ -195,7 +267,8 @@ The token is saved once and reused, so the phone never needs a new one.
 | App says **Server full** | Raise `-max`, or disconnect another phone |
 | No servers under the Wi-Fi tab | Same Wi-Fi subnet? Guest networks block it. Type `ip:9777` instead. Check the firewall for UDP 9777 |
 | `permission denied: /dev/uinput` | Run `make uinput-setup`, then log out and in |
-| Game does not see the pad | `evtest` should list `XPadLink - ...`. Cemu may show the generic SDL name "Xbox 360 Controller" |
+| Windows does not show a controller | Check that ViGEmBus is installed, both XPadLink files are beside each other, and the x64 DLL exports `vigem_alloc`; use the Windows amd64 build |
+| Linux game does not see the pad | `evtest` should list `XPadLink - ...`. Cemu may show the generic SDL name "Xbox 360 Controller" |
 | Plugged-in controller not detected | A USB-C controller needs the phone's only port. Use wireless adb: `adb tcpip 5555 && adb connect <phone-ip>:5555`, then unplug the cable |
 | Triggers act like on/off buttons | Open Calibration, pull each trigger fully on the **Triggers** tab and save. If it still jumps to full, open an issue with the controller model and the app log |
 | Stick drifts or never reaches full | Calibrate it on the **Sticks** tab, or raise the deadzone |
@@ -226,7 +299,7 @@ Test without a phone: `xpadlinkd -token abc &` then `go run ./cmd/xpadsim -token
 
 ### Known gaps
 
-- Linux only for virtual pads. macOS and Windows builds compile and pass tests but are untested on real machines.
+- Linux virtual pads use uinput. Windows virtual pads use ViGEmBus and currently require Windows amd64; macOS supports dry-run only.
 - Motion is experimental. It reaches Cemu, but in the BOTW maze shrine the maze still flips upside down (tested on a phone without a gyroscope, #32). It is only wired to Cemu (DSU).
 - Wi-Fi is LAN only with no encryption: the token only stops other people on the network from injecting input. Bluetooth needs pairing, and the link is encrypted by Bluetooth itself.
 - Bluetooth is Linux only, and untested with more than one phone at once.
@@ -245,7 +318,10 @@ Check vibration without a game: connect the phone, then run `go run ./cmd/xpadru
 It plays a rumble effect on the virtual pad, the way a game would.
 
 - CI (`.github/workflows/ci.yml`): tests on Linux, macOS and Windows, builds `xpadlinkd` for
-  linux, darwin and windows (amd64, arm64) with [GoReleaser](https://goreleaser.com) (`.goreleaser.yaml`). Pushing a `v*` tag publishes a release with the archives and checksums.
+  Linux and macOS (amd64, arm64) and Windows amd64 with [GoReleaser](https://goreleaser.com)
+  (`.goreleaser.yaml`). The Windows job builds the ViGEmClient DLL from a pinned source
+  revision. Pushing a `v*` tag publishes archives, checksums, and separate Windows executable,
+  DLL, and client-license assets. The ViGEmBus installer is linked upstream, not redistributed.
 - Wire format: [docs/PROTOCOL.md](docs/PROTOCOL.md).
 - Layout: `server/` Go daemon (`proto`, `hub`, `bt`, `vpad`, `dsu`, `cmd/`), `app/` Flutter code (`lib/`: screens in `main.dart` and `onscreen.dart`, colours and shared widgets in `theme.dart`, Wi-Fi and Bluetooth links in `link.dart`) and Kotlin (`kotlin/`: gamepad and sensors in `MainActivity.kt`, the Bluetooth connection in `BtLink.kt`), copied into a generated project by `app/setup.sh`.
 
